@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useI18n } from '../i18n';
 import { ubpStore } from '../services/store';
-import { ScreenCodes, ActionCodes, Warehouse, WarehouseInput, Branch } from '../types/ubp';
+import { ScreenCodes, ActionCodes, Warehouse, WarehouseInput } from '../types/ubp';
 import { PageHeader } from '../components/Shared/PageHeader';
 import { ForbiddenView } from '../components/Shared/ForbiddenView';
 import { AppIcon } from '../components/Shared/AppIcon';
@@ -17,8 +17,10 @@ export const Warehouses: React.FC = () => {
 
   const [search, setSearch] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
-  const [warehouses, setWarehouses] = useState<Warehouse[]>(() => ubpStore.getWarehouses('', false));
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagedData, setPagedData] = useState(() => ubpStore.getWarehousesPaged('', false, 1, 25));
   const allBranches = ubpStore.getBranches('', true);
+  const warehouseCustomFields = ubpStore.getCustomFields('warehouses').filter((f) => f.is_active);
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -29,8 +31,10 @@ export const Warehouses: React.FC = () => {
     name_en: '',
     is_active: true,
     branch_ids: [],
+    custom_fields: {},
   });
   const [formError, setFormError] = useState<string | null>(null);
+  const [alertNotice, setAlertNotice] = useState<string | null>(null);
 
   // Link Branches Dialog
   const [linkingWarehouse, setLinkingWarehouse] = useState<Warehouse | null>(null);
@@ -39,13 +43,15 @@ export const Warehouses: React.FC = () => {
   // Delete Confirm
   const [deletingWarehouse, setDeletingWarehouse] = useState<Warehouse | null>(null);
 
-  const reloadData = () => {
-    setWarehouses(ubpStore.getWarehouses(search, includeInactive));
+  const reloadData = (page = currentPage, query = search, incInactive = includeInactive) => {
+    const res = ubpStore.getWarehousesPaged(query, incInactive, page, 25);
+    setPagedData(res);
+    setCurrentPage(res.page);
   };
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
-    setWarehouses(ubpStore.getWarehouses(val, includeInactive));
+    reloadData(1, val, includeInactive);
   };
 
   if (!canView.allowed) {
@@ -54,12 +60,17 @@ export const Warehouses: React.FC = () => {
 
   const openAddDialog = () => {
     setEditingWarehouse(null);
+    const initialCustom: Record<string, unknown> = {};
+    warehouseCustomFields.forEach((cf) => {
+      initialCustom[cf.field_key] = cf.data_type === 'bool' ? false : '';
+    });
     setFormInput({
       code: '',
       name_ar: '',
       name_en: '',
       is_active: true,
       branch_ids: allBranches.length > 0 ? [allBranches[0].id] : [],
+      custom_fields: initialCustom,
     });
     setFormError(null);
     setIsDialogOpen(true);
@@ -67,12 +78,19 @@ export const Warehouses: React.FC = () => {
 
   const openEditDialog = (w: Warehouse) => {
     setEditingWarehouse(w);
+    const initialCustom: Record<string, unknown> = { ...(w.custom_fields || {}) };
+    warehouseCustomFields.forEach((cf) => {
+      if (initialCustom[cf.field_key] === undefined) {
+        initialCustom[cf.field_key] = cf.data_type === 'bool' ? false : '';
+      }
+    });
     setFormInput({
       code: w.code,
       name_ar: w.name_ar,
       name_en: w.name_en || '',
       is_active: w.is_active,
       branch_ids: [...w.branch_ids],
+      custom_fields: initialCustom,
     });
     setFormError(null);
     setIsDialogOpen(true);
@@ -103,7 +121,7 @@ export const Warehouses: React.FC = () => {
       reloadData();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        alert(t(err.message) || err.message);
+        setAlertNotice(t(err.message) || err.message);
       }
     }
   };
@@ -111,12 +129,15 @@ export const Warehouses: React.FC = () => {
   const handleDelete = () => {
     if (!deletingWarehouse) return;
     try {
-      ubpStore.deleteWarehouse(deletingWarehouse.id);
+      const outcome = ubpStore.deleteWarehouse(deletingWarehouse.id);
+      if (outcome.deactivated) {
+        setAlertNotice(outcome.message || 'تم تحويل حذف المخزن إلى تعطيل لوجود ارتباطات بالمستخدمين.');
+      }
       setDeletingWarehouse(null);
       reloadData();
     } catch (err: unknown) {
       if (err instanceof Error) {
-        alert(t(err.message) || err.message);
+        setAlertNotice(t(err.message) || err.message);
       }
     }
   };
@@ -143,7 +164,7 @@ export const Warehouses: React.FC = () => {
     <div className="space-y-6">
       <PageHeader
         title={t('screen.warehouses')}
-        subtitle={t('warehouses.list_hint') || 'إدارة المخازن وربطها بالفروع وتحديد النطاقات'}
+        subtitle="إدارة المخازن وربطها بالفروع وتحديد النطاقات (25 مخزناً لكل صفحة)"
         actions={
           canAdd.allowed && (
             <button
@@ -157,6 +178,22 @@ export const Warehouses: React.FC = () => {
           )
         }
       />
+
+      {alertNotice && (
+        <div className="flex items-center justify-between p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+          <div className="flex items-center gap-2">
+            <AppIcon name="AlertTriangle" size={18} className="text-amber-600 shrink-0" />
+            <span>{alertNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAlertNotice(null)}
+            className="text-amber-700 hover:text-amber-900 font-bold text-xs"
+          >
+            {t('common.close') || 'إغلاق'}
+          </button>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="ubp-toolbar flex-wrap">
@@ -188,7 +225,7 @@ export const Warehouses: React.FC = () => {
             onChange={() => {
               const nextVal = !includeInactive;
               setIncludeInactive(nextVal);
-              setWarehouses(ubpStore.getWarehouses(search, nextVal));
+              reloadData(1, search, nextVal);
             }}
             className="w-4 h-4 rounded text-teal-600 border-slate-300"
           />
@@ -202,33 +239,51 @@ export const Warehouses: React.FC = () => {
           <table className="w-full text-start text-sm border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-600 font-bold text-xs uppercase tracking-wider">
-                <th className="p-4 text-start">{t('common.code')}</th>
-                <th className="p-4 text-start">{t('common.name_ar')}</th>
-                <th className="p-4 text-start">{t('common.name_en')}</th>
-                <th className="p-4 text-start">{t('warehouses.linked_branches') || 'الفروع المرتبطة'}</th>
-                <th className="p-4 text-center">{t('common.status')}</th>
-                <th className="p-4 text-end">{t('common.actions')}</th>
+                <th className="text-start">{t('common.code')}</th>
+                <th className="text-start">{t('common.name_ar')}</th>
+                <th className="text-start">{t('branches.title')}</th>
+                <th className="text-center">{t('common.status')}</th>
+                <th className="text-end">{t('common.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {warehouses.length === 0 ? (
+              {pagedData.items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-slate-400 font-medium">
+                  <td colSpan={5} className="p-8 text-center text-slate-400 font-medium">
                     {t('common.no_data')}
                   </td>
                 </tr>
               ) : (
-                warehouses.map((w) => {
+                pagedData.items.map((w) => {
                   const linkedBranches = allBranches.filter((b) => w.branch_ids.includes(b.id));
 
                   return (
                     <tr key={w.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="p-4 font-mono font-bold text-slate-800">
+                      <td className="font-mono font-bold text-slate-800">
                         <span className="ubp-code">{w.code}</span>
                       </td>
-                      <td className="p-4 font-bold text-slate-900">{w.name_ar}</td>
-                      <td className="p-4 text-slate-600">{w.name_en || '—'}</td>
-                      <td className="p-4">
+                      <td className="font-bold text-slate-900">
+                        <div>{w.name_ar}</div>
+                        {w.custom_fields && Object.keys(w.custom_fields).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {warehouseCustomFields.map((cf) => {
+                              const v = w.custom_fields?.[cf.field_key];
+                              if (v === undefined || v === null || v === '') return null;
+                              const label = language === 'en' && cf.label_en ? cf.label_en : cf.label_ar;
+                              return (
+                                <span
+                                  key={cf.id}
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md"
+                                >
+                                  <span className="text-slate-400">{label}:</span>
+                                  <span className="font-mono text-slate-800">{String(v)}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </td>
+                      <td>
                         <div className="ubp-chip-list">
                           {linkedBranches.length === 0 ? (
                             <span className="text-xs text-amber-600 italic">
@@ -238,7 +293,7 @@ export const Warehouses: React.FC = () => {
                             linkedBranches.map((b) => (
                               <span
                                 key={b.id}
-                                className="inline-block px-2 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"
+                                className="inline-block px-2.5 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"
                               >
                                 {language === 'en' && b.name_en ? b.name_en : b.name_ar}
                               </span>
@@ -246,7 +301,7 @@ export const Warehouses: React.FC = () => {
                           )}
                         </div>
                       </td>
-                      <td className="p-4 text-center">
+                      <td className="text-center">
                         <span
                           className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
                             w.is_active
@@ -257,7 +312,7 @@ export const Warehouses: React.FC = () => {
                           {w.is_active ? t('common.active') : t('common.inactive')}
                         </span>
                       </td>
-                      <td className="p-4 text-end">
+                      <td className="text-end">
                         <div className="flex items-center justify-end gap-1">
                           {canLink.allowed && (
                             <button
@@ -308,6 +363,34 @@ export const Warehouses: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* 25-Rows Pager Controls */}
+        <div className="flex items-center justify-between p-4 border-t border-slate-200/80 bg-slate-50/60 text-xs">
+          <span className="text-slate-500">
+            {t('common.pager_info', (pagedData.page - 1) * 25 + 1, Math.min(pagedData.page * 25, pagedData.total), pagedData.total)}
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={pagedData.page <= 1}
+              onClick={() => reloadData(pagedData.page - 1)}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            >
+              {t('common.previous')}
+            </button>
+            <span className="px-3 py-1.5 font-bold text-slate-800">
+              {pagedData.page} / {pagedData.totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={pagedData.page >= pagedData.totalPages}
+              onClick={() => reloadData(pagedData.page + 1)}
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+            >
+              {t('common.next')}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* Add / Edit Dialog */}
@@ -342,7 +425,7 @@ export const Warehouses: React.FC = () => {
                     value={formInput.code}
                     onChange={(e) => setFormInput({ ...formInput, code: e.target.value })}
                     required
-                    maxLength={50}
+                    maxLength={30}
                     className="w-full uppercase font-mono"
                   />
                 </label>
@@ -354,7 +437,7 @@ export const Warehouses: React.FC = () => {
                     value={formInput.name_ar}
                     onChange={(e) => setFormInput({ ...formInput, name_ar: e.target.value })}
                     required
-                    maxLength={150}
+                    maxLength={255}
                     className="w-full"
                   />
                 </label>
@@ -366,7 +449,7 @@ export const Warehouses: React.FC = () => {
                   type="text"
                   value={formInput.name_en || ''}
                   onChange={(e) => setFormInput({ ...formInput, name_en: e.target.value })}
-                  maxLength={150}
+                  maxLength={255}
                   className="w-full"
                 />
               </label>
@@ -376,7 +459,7 @@ export const Warehouses: React.FC = () => {
                 <span className="text-xs font-bold text-slate-700 block mb-2">
                   {t('warehouses.link_to_branches') || 'ربط بالفروع'}:
                 </span>
-                <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-xl bg-slate-50">
+                <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2.5 border border-slate-200 rounded-xl bg-slate-50">
                   {allBranches.map((b) => {
                     const isChecked = formInput.branch_ids.includes(b.id);
                     return (
@@ -402,6 +485,92 @@ export const Warehouses: React.FC = () => {
                   })}
                 </div>
               </div>
+
+              {/* Dynamic Custom Fields */}
+              {warehouseCustomFields.length > 0 && (
+                <div className="pt-3 border-t border-slate-100">
+                  <div className="text-xs font-bold text-slate-700 mb-2 flex items-center gap-1.5">
+                    <AppIcon name="SlidersHorizontal" size={14} className="text-teal-600" />
+                    <span>{t('custom_fields.section_title') || 'الحقول الإضافية (Custom Fields)'}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {warehouseCustomFields.map((cf) => {
+                      const val = formInput.custom_fields?.[cf.field_key];
+                      const label = language === 'en' && cf.label_en ? cf.label_en : cf.label_ar;
+
+                      if (cf.data_type === 'bool') {
+                        return (
+                          <label key={cf.id} className="flex items-center gap-2 cursor-pointer font-medium text-slate-800 text-xs col-span-2 py-1">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(val)}
+                              onChange={(e) =>
+                                setFormInput({
+                                  ...formInput,
+                                  custom_fields: {
+                                    ...(formInput.custom_fields || {}),
+                                    [cf.field_key]: e.target.checked,
+                                  },
+                                })
+                              }
+                              className="w-4 h-4 rounded text-teal-600 border-slate-300"
+                            />
+                            <span>{label} {cf.is_required && '*'}</span>
+                          </label>
+                        );
+                      }
+
+                      if (cf.data_type === 'list') {
+                        return (
+                          <label key={cf.id} className="ubp-field col-span-2">
+                            <span>{label} {cf.is_required && '*'}</span>
+                            <select
+                              value={String(val || '')}
+                              onChange={(e) =>
+                                setFormInput({
+                                  ...formInput,
+                                  custom_fields: {
+                                    ...(formInput.custom_fields || {}),
+                                    [cf.field_key]: e.target.value,
+                                  },
+                                })
+                              }
+                              required={cf.is_required}
+                              className="w-full text-sm"
+                            >
+                              <option value="">-- {t('common.select') || 'اختر'} --</option>
+                              {cf.options.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </label>
+                        );
+                      }
+
+                      return (
+                        <label key={cf.id} className="ubp-field col-span-2 sm:col-span-1">
+                          <span>{label} {cf.is_required && '*'}</span>
+                          <input
+                            type={cf.data_type === 'number' ? 'number' : cf.data_type === 'date' ? 'date' : 'text'}
+                            value={val !== undefined && val !== null ? String(val) : ''}
+                            onChange={(e) =>
+                              setFormInput({
+                                ...formInput,
+                                custom_fields: {
+                                  ...(formInput.custom_fields || {}),
+                                  [cf.field_key]: cf.data_type === 'number' ? (e.target.value === '' ? '' : Number(e.target.value)) : e.target.value,
+                                },
+                              })
+                            }
+                            required={cf.is_required}
+                            className="w-full text-sm"
+                          />
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               <label className="flex items-center gap-2 pt-2 cursor-pointer font-medium text-slate-800 text-sm">
                 <input
@@ -505,6 +674,10 @@ export const Warehouses: React.FC = () => {
             <h2 className="text-lg font-bold text-red-600 mb-2">{t('common.confirm_delete')}</h2>
             <p className="text-sm text-slate-600 mb-4">
               هل أنت متأكد من رغبتك في حذف المخزن: <strong>{deletingWarehouse.name_ar}</strong> ({deletingWarehouse.code})؟
+              <br />
+              <span className="text-xs text-slate-400 mt-1 block">
+                ملاحظة: إذا كان المخزن مرتبطاً بمستخدمين سيتحول الحذف تلقائياً إلى تعطيل للحفاظ على اتساق الفروع.
+              </span>
             </p>
             <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
               <button

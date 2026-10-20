@@ -15,6 +15,7 @@ import {
   UserListItem,
   AuditEntry,
   AuditFilter,
+  AuditAction,
   QaTestDefinition,
   QaTestResult,
   QaRunSummary,
@@ -56,6 +57,21 @@ function generateTraceId(): string {
   return 'tr_' + Math.random().toString(36).substring(2, 12);
 }
 
+function sanitizeAuditData(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== 'object') return null;
+  try {
+    const clone = JSON.parse(JSON.stringify(data));
+    if (typeof clone === 'object' && clone !== null) {
+      delete (clone as Record<string, unknown>).password_hash;
+      delete (clone as Record<string, unknown>).password;
+      delete (clone as Record<string, unknown>).token_hash;
+    }
+    return clone;
+  } catch {
+    return null;
+  }
+}
+
 // Default Seed Data
 const DEFAULT_SETTINGS: AppSettings = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -84,6 +100,7 @@ const DEFAULT_BRANCHES: Branch[] = [
     phone: '+201000000000',
     is_active: true,
     custom_fields: {},
+    search_text: normalizeArabic('MAIN الفرع الرئيسي Main Branch +201000000000'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -97,6 +114,7 @@ const DEFAULT_BRANCHES: Branch[] = [
     phone: '+201000000001',
     is_active: true,
     custom_fields: {},
+    search_text: normalizeArabic('ALX فرع الإسكندرية Alexandria Branch +201000000001'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -112,6 +130,7 @@ const DEFAULT_WAREHOUSES: Warehouse[] = [
     is_active: true,
     custom_fields: {},
     branch_ids: ['b1111111-1111-4111-8111-111111111111'],
+    search_text: normalizeArabic('WH-MAIN المخزن الرئيسي Main Warehouse'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -124,6 +143,7 @@ const DEFAULT_WAREHOUSES: Warehouse[] = [
     is_active: true,
     custom_fields: {},
     branch_ids: ['b1111111-1111-4111-8111-111111111111', 'b2222222-2222-4222-8222-222222222222'],
+    search_text: normalizeArabic('WH-TRANSIT مخزن العبور والتوزيع Transit & Distribution Warehouse'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -227,6 +247,7 @@ const DEFAULT_USERS: User[] = [
     is_admin: true,
     is_super_admin: true,
     failed_attempts: 0,
+    search_text: normalizeArabic('admin مدير النظام'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -246,6 +267,7 @@ const DEFAULT_USERS: User[] = [
     is_admin: false,
     is_super_admin: false,
     failed_attempts: 0,
+    search_text: normalizeArabic('manager_cairo أحمد محمود'),
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -268,7 +290,7 @@ const DEFAULT_CUSTOM_FIELDS: CustomFieldDefinition[] = [
     options: [],
     is_required: false,
     is_active: true,
-    sort_order: 1,
+    sort_order: 0,
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -283,7 +305,7 @@ const DEFAULT_CUSTOM_FIELDS: CustomFieldDefinition[] = [
     options: [],
     is_required: false,
     is_active: true,
-    sort_order: 1,
+    sort_order: 0,
     created_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     updated_at: new Date('2026-10-19T00:00:00Z').toISOString(),
     version: 1,
@@ -434,11 +456,14 @@ class UniversalBusinessPlatformStore {
   public logAudit(
     tableName: string,
     recordId: string,
-    action: string,
+    action: AuditAction | string,
     oldData?: unknown,
     newData?: unknown
   ) {
     const branch = this.branches.find((b) => b.id === this.currentBranchId);
+    const sanitizedOld = sanitizeAuditData(oldData);
+    const sanitizedNew = sanitizeAuditData(newData);
+
     const entry: AuditEntry = {
       id: this.auditLogs.length > 0 ? Math.max(...this.auditLogs.map((a) => a.id)) + 1 : 1,
       user_id: this.currentActor?.user_id,
@@ -448,8 +473,8 @@ class UniversalBusinessPlatformStore {
       table_name: tableName,
       record_id: recordId,
       action,
-      old_data: oldData ? JSON.parse(JSON.stringify(oldData)) : null,
-      new_data: newData ? JSON.parse(JSON.stringify(newData)) : null,
+      old_data: sanitizedOld,
+      new_data: sanitizedNew,
       ip_address: '127.0.0.1',
       trace_id: this.currentActor?.trace_id || generateTraceId(),
       created_at: new Date().toISOString(),
@@ -464,26 +489,39 @@ class UniversalBusinessPlatformStore {
     return this.currentActor;
   }
 
-  public setCurrentBranch(branchId: string) {
-    if (this.currentActor && (this.currentActor.is_super_admin || this.currentActor.allowed_branch_ids.includes(branchId))) {
-      this.currentBranchId = branchId;
-      this.currentActor.current_branch_id = branchId;
-      this.saveToStorage();
+  public setCurrentBranch(branchId: string | null) {
+    if (this.currentActor) {
+      if (branchId === null || branchId === '') {
+        // Admin can work without a branch
+        if (this.currentActor.is_admin || this.currentActor.is_super_admin) {
+          this.currentBranchId = null;
+          this.currentActor.current_branch_id = null;
+          this.saveToStorage();
+        }
+      } else if (this.currentActor.is_super_admin || this.currentActor.allowed_branch_ids.includes(branchId)) {
+        this.currentBranchId = branchId;
+        this.currentActor.current_branch_id = branchId;
+        this.saveToStorage();
+      }
     }
   }
 
   public login(username: string, password: string): { success: boolean; errorKey?: string } {
-    const user = this.users.find((u) => u.username.toLowerCase() === username.trim().toLowerCase());
+    const cleanUsername = username.trim().toLowerCase();
+    const user = this.users.find((u) => u.username.toLowerCase() === cleanUsername);
     if (!user) {
+      this.logAudit('users', cleanUsername, 'LOGIN_FAILED', null, { username: cleanUsername });
       return { success: false, errorKey: 'validation.invalid_credentials' };
     }
 
     if (!user.is_active) {
-      return { success: false, errorKey: 'auth.account_inactive' };
+      this.logAudit('users', user.id, 'LOGIN_FAILED', null, { username: user.username, reason: 'INACTIVE' });
+      return { success: false, errorKey: 'validation.invalid_credentials' }; // Uniform error message
     }
 
     if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      return { success: false, errorKey: 'auth.account_locked' };
+      this.logAudit('users', user.id, 'LOGIN_FAILED', null, { username: user.username, reason: 'LOCKED' });
+      return { success: false, errorKey: 'validation.invalid_credentials' }; // Uniform error message
     }
 
     if (user.password_hash !== password) {
@@ -493,6 +531,7 @@ class UniversalBusinessPlatformStore {
         lockedUntil.setMinutes(lockedUntil.getMinutes() + this.settings.lockout_minutes);
         user.locked_until = lockedUntil.toISOString();
       }
+      this.logAudit('users', user.id, 'LOGIN_FAILED', null, { username: user.username, failed_attempts: user.failed_attempts });
       this.saveToStorage();
       return { success: false, errorKey: 'validation.invalid_credentials' };
     }
@@ -501,7 +540,7 @@ class UniversalBusinessPlatformStore {
     user.failed_attempts = 0;
     user.locked_until = null;
     user.last_login_at = new Date().toISOString();
-    this.currentBranchId = user.default_branch_id || user.branch_ids[0] || this.branches[0]?.id || null;
+    this.currentBranchId = user.default_branch_id || user.branch_ids[0] || (user.is_admin ? null : this.branches[0]?.id || null);
     this.currentActor = {
       user_id: user.id,
       username: user.username,
@@ -538,11 +577,14 @@ class UniversalBusinessPlatformStore {
     if (newPass.length < this.settings.password_min_length) {
       return { success: false, errorKey: 'validation.password_too_short' };
     }
+    if (newPass === user.username) {
+      return { success: false, errorKey: 'validation.password_cannot_be_username' };
+    }
 
     user.password_hash = newPass;
     user.updated_at = new Date().toISOString();
     user.version += 1;
-    this.logAudit('users', user.id, 'CHANGE_PASSWORD', null, { username: user.username });
+    this.logAudit('users', user.id, 'PASSWORD_RESET', null, { username: user.username });
     this.saveToStorage();
     return { success: true };
   }
@@ -606,12 +648,22 @@ class UniversalBusinessPlatformStore {
     if (search && search.trim()) {
       const q = normalizeArabic(search);
       list = list.filter((b) =>
+        (b.search_text && b.search_text.includes(q)) ||
         normalizeArabic(b.code).includes(q) ||
         normalizeArabic(b.name_ar).includes(q) ||
         (b.name_en && normalizeArabic(b.name_en).includes(q))
       );
     }
     return list;
+  }
+
+  public getBranchesPaged(search?: string, includeInactive = false, page = 1, pageSize = 25) {
+    const all = this.getBranches(search, includeInactive);
+    const total = all.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const items = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return { items, total, page: currentPage, pageSize, totalPages };
   }
 
   public getBranch(id: string): Branch | undefined {
@@ -622,6 +674,7 @@ class UniversalBusinessPlatformStore {
     const existing = this.branches.find((b) => b.code.toUpperCase() === input.code.toUpperCase().trim());
     if (existing) throw new Error('validation.duplicate_code');
 
+    const searchText = normalizeArabic(`${input.code} ${input.name_ar} ${input.name_en || ''} ${input.phone || ''}`);
     const branch: Branch = {
       id: generateId(),
       code: input.code.toUpperCase().trim(),
@@ -631,12 +684,13 @@ class UniversalBusinessPlatformStore {
       phone: input.phone?.trim() || null,
       is_active: input.is_active ?? true,
       custom_fields: input.custom_fields || {},
+      search_text: searchText,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       version: 1,
     };
     this.branches.push(branch);
-    this.logAudit('branches', branch.id, 'CREATE', null, branch);
+    this.logAudit('branches', branch.id, 'INSERT', null, branch);
     this.saveToStorage();
     return branch;
   }
@@ -651,6 +705,7 @@ class UniversalBusinessPlatformStore {
     );
     if (duplicate) throw new Error('validation.duplicate_code');
 
+    const searchText = normalizeArabic(`${input.code} ${input.name_ar} ${input.name_en || ''} ${input.phone || ''}`);
     const updated: Branch = {
       ...this.branches[index],
       code: input.code.toUpperCase().trim(),
@@ -660,6 +715,7 @@ class UniversalBusinessPlatformStore {
       phone: input.phone?.trim() || null,
       is_active: input.is_active,
       custom_fields: input.custom_fields || this.branches[index].custom_fields,
+      search_text: searchText,
       updated_at: new Date().toISOString(),
       version: this.branches[index].version + 1,
     };
@@ -669,19 +725,28 @@ class UniversalBusinessPlatformStore {
     return updated;
   }
 
-  public deleteBranch(id: string): void {
+  public deleteBranch(id: string): { deleted: boolean; deactivated?: boolean; message?: string } {
     const branch = this.branches.find((b) => b.id === id);
     if (!branch) throw new Error('error.not_found');
 
-    // Check warehouse dependency
-    const linkedWarehouse = this.warehouses.find((w) => w.branch_ids.includes(id));
-    if (linkedWarehouse) {
-      throw new Error('validation.branch_has_warehouses');
+    // Rule: حذف فرع عليه حركات يتحول لتعطيل
+    const isLinked = this.warehouses.some((w) => w.branch_ids.includes(id)) ||
+                     this.users.some((u) => u.branch_ids.includes(id)) ||
+                     this.auditLogs.some((a) => a.branch_id === id);
+
+    if (isLinked) {
+      branch.is_active = false;
+      branch.updated_at = new Date().toISOString();
+      branch.version += 1;
+      this.logAudit('branches', id, 'UPDATE', { is_active: true }, { is_active: false, reason: 'DEACTIVATE_INSTEAD_OF_DELETE' });
+      this.saveToStorage();
+      return { deleted: false, deactivated: true, message: 'تم تحويل حذف الفرع إلى تعطيل (is_active = false) نظراً لوجود ارتباطات وحركات قائمة عليه.' };
     }
 
     this.branches = this.branches.filter((b) => b.id !== id);
     this.logAudit('branches', id, 'DELETE', branch, null);
     this.saveToStorage();
+    return { deleted: true };
   }
 
   public toggleBranchActive(id: string): Branch {
@@ -699,6 +764,7 @@ class UniversalBusinessPlatformStore {
     if (search && search.trim()) {
       const q = normalizeArabic(search);
       list = list.filter((w) =>
+        (w.search_text && w.search_text.includes(q)) ||
         normalizeArabic(w.code).includes(q) ||
         normalizeArabic(w.name_ar).includes(q) ||
         (w.name_en && normalizeArabic(w.name_en).includes(q))
@@ -707,10 +773,20 @@ class UniversalBusinessPlatformStore {
     return list;
   }
 
+  public getWarehousesPaged(search?: string, includeInactive = false, page = 1, pageSize = 25) {
+    const all = this.getWarehouses(search, includeInactive);
+    const total = all.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const items = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return { items, total, page: currentPage, pageSize, totalPages };
+  }
+
   public addWarehouse(input: WarehouseInput): Warehouse {
     const existing = this.warehouses.find((w) => w.code.toUpperCase() === input.code.toUpperCase().trim());
     if (existing) throw new Error('validation.duplicate_code');
 
+    const searchText = normalizeArabic(`${input.code} ${input.name_ar} ${input.name_en || ''}`);
     const warehouse: Warehouse = {
       id: generateId(),
       code: input.code.toUpperCase().trim(),
@@ -719,12 +795,13 @@ class UniversalBusinessPlatformStore {
       is_active: input.is_active ?? true,
       custom_fields: input.custom_fields || {},
       branch_ids: input.branch_ids || [],
+      search_text: searchText,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       version: 1,
     };
     this.warehouses.push(warehouse);
-    this.logAudit('warehouses', warehouse.id, 'CREATE', null, warehouse);
+    this.logAudit('warehouses', warehouse.id, 'INSERT', null, warehouse);
     this.saveToStorage();
     return warehouse;
   }
@@ -739,6 +816,7 @@ class UniversalBusinessPlatformStore {
     );
     if (duplicate) throw new Error('validation.duplicate_code');
 
+    const searchText = normalizeArabic(`${input.code} ${input.name_ar} ${input.name_en || ''}`);
     const updated: Warehouse = {
       ...this.warehouses[index],
       code: input.code.toUpperCase().trim(),
@@ -747,6 +825,7 @@ class UniversalBusinessPlatformStore {
       is_active: input.is_active,
       custom_fields: input.custom_fields || this.warehouses[index].custom_fields,
       branch_ids: input.branch_ids,
+      search_text: searchText,
       updated_at: new Date().toISOString(),
       version: this.warehouses[index].version + 1,
     };
@@ -756,13 +835,24 @@ class UniversalBusinessPlatformStore {
     return updated;
   }
 
-  public deleteWarehouse(id: string): void {
+  public deleteWarehouse(id: string): { deleted: boolean; deactivated?: boolean; message?: string } {
     const warehouse = this.warehouses.find((w) => w.id === id);
     if (!warehouse) throw new Error('error.not_found');
+
+    const isLinked = this.users.some((u) => u.warehouse_ids.includes(id));
+    if (isLinked) {
+      warehouse.is_active = false;
+      warehouse.updated_at = new Date().toISOString();
+      warehouse.version += 1;
+      this.logAudit('warehouses', id, 'UPDATE', { is_active: true }, { is_active: false, reason: 'DEACTIVATE_INSTEAD_OF_DELETE' });
+      this.saveToStorage();
+      return { deleted: false, deactivated: true, message: 'تم تحويل حذف المخزن إلى تعطيل (is_active = false) لوجود ارتباطات بالمستخدمين.' };
+    }
 
     this.warehouses = this.warehouses.filter((w) => w.id !== id);
     this.logAudit('warehouses', id, 'DELETE', warehouse, null);
     this.saveToStorage();
+    return { deleted: true };
   }
 
   public toggleWarehouseActive(id: string): Warehouse {
@@ -786,6 +876,15 @@ class UniversalBusinessPlatformStore {
   // --- Currencies ---
   public getCurrencies(): Currency[] {
     return [...this.currencies];
+  }
+
+  public getCurrenciesPaged(page = 1, pageSize = 25) {
+    const all = this.currencies;
+    const total = all.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const items = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return { items, total, page: currentPage, pageSize, totalPages };
   }
 
   public addCurrency(input: CurrencyInput): Currency {
@@ -813,7 +912,7 @@ class UniversalBusinessPlatformStore {
       version: 1,
     };
     this.currencies.push(currency);
-    this.logAudit('currencies', currency.id, 'CREATE', null, currency);
+    this.logAudit('currencies', currency.id, 'INSERT', null, currency);
     this.saveToStorage();
     return currency;
   }
@@ -871,7 +970,22 @@ class UniversalBusinessPlatformStore {
     return this.customFields.sort((a, b) => a.sort_order - b.sort_order);
   }
 
+  public getCustomFieldsPaged(entity?: string, page = 1, pageSize = 25) {
+    const all = this.getCustomFields(entity);
+    const total = all.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const items = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return { items, total, page: currentPage, pageSize, totalPages };
+  }
+
   public addCustomField(input: CustomFieldInput): CustomFieldDefinition {
+    // Check regex: ^[a-z][a-z0-9_]*$
+    const keyRegex = /^[a-z][a-z0-9_]*$/;
+    if (!keyRegex.test(input.field_key)) {
+      throw new Error('مفتاح الحقل يجب أن يبدأ بحرف إنجليزي صغير ويحتوي فقط على أحرف صغيرة وأرقام و _');
+    }
+
     const existing = this.customFields.find(
       (f) => f.entity_name === input.entity_name && f.field_key.toLowerCase() === input.field_key.toLowerCase().trim()
     );
@@ -887,18 +1001,23 @@ class UniversalBusinessPlatformStore {
       options: input.options || [],
       is_required: input.is_required,
       is_active: input.is_active,
-      sort_order: input.sort_order,
+      sort_order: input.sort_order ?? 0,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       version: 1,
     };
     this.customFields.push(field);
-    this.logAudit('custom_field_definitions', field.id, 'CREATE', null, field);
+    this.logAudit('custom_field_definitions', field.id, 'INSERT', null, field);
     this.saveToStorage();
     return field;
   }
 
   public updateCustomField(id: string, input: CustomFieldInput): CustomFieldDefinition {
+    const keyRegex = /^[a-z][a-z0-9_]*$/;
+    if (!keyRegex.test(input.field_key)) {
+      throw new Error('مفتاح الحقل يجب أن يبدأ بحرف إنجليزي صغير ويحتوي فقط على أحرف صغيرة وأرقام و _');
+    }
+
     const index = this.customFields.findIndex((f) => f.id === id);
     if (index === -1) throw new Error('error.not_found');
     const old = { ...this.customFields[index] };
@@ -921,7 +1040,7 @@ class UniversalBusinessPlatformStore {
       options: input.options || [],
       is_required: input.is_required,
       is_active: input.is_active,
-      sort_order: input.sort_order,
+      sort_order: input.sort_order ?? 0,
       updated_at: new Date().toISOString(),
       version: this.customFields[index].version + 1,
     };
@@ -941,15 +1060,22 @@ class UniversalBusinessPlatformStore {
   }
 
   // --- Users ---
-  public getUsers(search?: string): UserListItem[] {
+  public getUsers(search?: string, viewerIsSuperAdmin = false): UserListItem[] {
     let list = [...this.users];
+    // In plan: حسابات is_super_admin ما بتظهرش لأدمن العميل ولا يقدر يعدلها أو يعطلها أو يحذفها
+    if (!viewerIsSuperAdmin && !this.currentActor?.is_super_admin) {
+      list = list.filter((u) => !u.is_super_admin);
+    }
+
     if (search && search.trim()) {
       const q = normalizeArabic(search);
       list = list.filter((u) =>
+        (u.search_text && u.search_text.includes(q)) ||
         normalizeArabic(u.username).includes(q) ||
         (u.name && normalizeArabic(u.name).includes(q))
       );
     }
+
     return list.map((u) => ({
       id: u.id,
       name: u.name,
@@ -964,7 +1090,17 @@ class UniversalBusinessPlatformStore {
       branch_count: u.branch_ids.length,
       warehouse_count: u.warehouse_ids.length,
       role_names: this.roles.filter((r) => u.role_ids.includes(r.id)).map((r) => r.name_ar),
+      search_text: u.search_text,
     }));
+  }
+
+  public getUsersPaged(search?: string, page = 1, pageSize = 25, viewerIsSuperAdmin = false) {
+    const all = this.getUsers(search, viewerIsSuperAdmin);
+    const total = all.length;
+    const totalPages = Math.ceil(total / pageSize) || 1;
+    const currentPage = Math.max(1, Math.min(page, totalPages));
+    const items = all.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    return { items, total, page: currentPage, pageSize, totalPages };
   }
 
   public getUser(id: string): User | undefined {
@@ -972,23 +1108,29 @@ class UniversalBusinessPlatformStore {
   }
 
   public addUser(input: UserInput): User {
-    const existing = this.users.find((u) => u.username.toLowerCase() === input.username.toLowerCase().trim());
+    const cleanUsername = input.username.toLowerCase().trim();
+    const existing = this.users.find((u) => u.username.toLowerCase() === cleanUsername);
     if (existing) throw new Error('validation.duplicate_username');
 
     if (!input.password || input.password.length < this.settings.password_min_length) {
       throw new Error('validation.password_too_short');
     }
 
+    // CHECK (NOT is_super_admin OR is_admin)
+    const isAdmin = input.is_super_admin ? true : (input.is_admin ?? false);
+    const searchText = normalizeArabic(`${cleanUsername} ${input.name || ''}`);
+
     const user: User = {
       id: generateId(),
       name: input.name?.trim() || null,
-      username: input.username.toLowerCase().trim(),
+      username: cleanUsername,
       password_hash: input.password,
       is_active: input.is_active ?? true,
       language: input.language || 'ar',
-      is_admin: input.is_admin ?? false,
+      is_admin: isAdmin,
       is_super_admin: input.is_super_admin ?? false,
       failed_attempts: 0,
+      search_text: searchText,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       version: 1,
@@ -999,7 +1141,7 @@ class UniversalBusinessPlatformStore {
       permissions: [],
     };
     this.users.push(user);
-    this.logAudit('users', user.id, 'CREATE', null, { username: user.username, name: user.name, is_admin: user.is_admin });
+    this.logAudit('users', user.id, 'INSERT', null, { username: user.username, name: user.name, is_admin: user.is_admin });
     this.saveToStorage();
     return user;
   }
@@ -1020,9 +1162,17 @@ class UniversalBusinessPlatformStore {
       }
     }
 
+    const isAdmin = input.is_super_admin ? true : (input.is_admin !== undefined ? input.is_admin : old.is_admin);
+    const updatedName = input.name !== undefined ? input.name : old.name;
+    const updatedUsername = input.username !== undefined ? input.username.toLowerCase().trim() : old.username;
+    const searchText = normalizeArabic(`${updatedUsername} ${updatedName || ''}`);
+
     const updated: User = {
       ...this.users[index],
       ...input,
+      username: updatedUsername,
+      is_admin: isAdmin,
+      search_text: searchText,
       updated_at: new Date().toISOString(),
       version: this.users[index].version + 1,
     };
@@ -1032,7 +1182,7 @@ class UniversalBusinessPlatformStore {
     return updated;
   }
 
-  public deleteUser(id: string): void {
+  public deleteUser(id: string): { deleted: boolean; deactivated?: boolean; message?: string } {
     const user = this.users.find((u) => u.id === id);
     if (!user) throw new Error('error.not_found');
 
@@ -1047,9 +1197,21 @@ class UniversalBusinessPlatformStore {
       }
     }
 
+    // Rule: حذف مستخدم عليه حركات يتحول لتعطيل
+    const hasActivity = this.auditLogs.some((a) => a.user_id === id);
+    if (hasActivity) {
+      user.is_active = false;
+      user.updated_at = new Date().toISOString();
+      user.version += 1;
+      this.logAudit('users', id, 'UPDATE', { is_active: true }, { is_active: false, reason: 'DEACTIVATE_INSTEAD_OF_DELETE' });
+      this.saveToStorage();
+      return { deleted: false, deactivated: true, message: 'تم تحويل حذف المستخدم إلى تعطيل (is_active = false) لوجود سجلات وحركات مرتبطة به.' };
+    }
+
     this.users = this.users.filter((u) => u.id !== id);
     this.logAudit('users', id, 'DELETE', { username: user.username }, null);
     this.saveToStorage();
+    return { deleted: true };
   }
 
   public unlockUser(id: string): void {
@@ -1058,7 +1220,7 @@ class UniversalBusinessPlatformStore {
     user.failed_attempts = 0;
     user.locked_until = null;
     user.version += 1;
-    this.logAudit('users', id, 'UNLOCK', null, { username: user.username });
+    this.logAudit('users', id, 'UPDATE', null, { username: user.username, action_note: 'UNLOCK_ACCOUNT' });
     this.saveToStorage();
   }
 
@@ -1072,7 +1234,7 @@ class UniversalBusinessPlatformStore {
     user.failed_attempts = 0;
     user.locked_until = null;
     user.version += 1;
-    this.logAudit('users', id, 'RESET_PASSWORD', null, { username: user.username });
+    this.logAudit('users', id, 'PASSWORD_RESET', null, { username: user.username });
     this.saveToStorage();
   }
 
@@ -1082,7 +1244,17 @@ class UniversalBusinessPlatformStore {
     const old = user.permissions;
     user.permissions = permissions;
     user.version += 1;
-    this.logAudit('user_permissions', id, 'UPDATE', { count: old?.length }, { count: permissions.length });
+    this.logAudit('user_permissions', id, 'PERMISSION_CHANGE', { count: old?.length }, { count: permissions.length });
+    this.saveToStorage();
+  }
+
+  public copyUserPermissions(sourceUserId: string, targetUserId: string): void {
+    const source = this.users.find((u) => u.id === sourceUserId);
+    const target = this.users.find((u) => u.id === targetUserId);
+    if (!source || !target) throw new Error('error.not_found');
+    target.permissions = source.permissions ? JSON.parse(JSON.stringify(source.permissions)) : [];
+    target.version += 1;
+    this.logAudit('user_permissions', target.id, 'PERMISSION_CHANGE', null, { copied_from: source.username });
     this.saveToStorage();
   }
 
@@ -1111,7 +1283,7 @@ class UniversalBusinessPlatformStore {
       version: 1,
     };
     this.roles.push(role);
-    this.logAudit('roles', role.id, 'CREATE', null, role);
+    this.logAudit('roles', role.id, 'INSERT', null, role);
     this.saveToStorage();
     return role;
   }
@@ -1185,10 +1357,32 @@ class UniversalBusinessPlatformStore {
     return list;
   }
 
+  // Keyset Pagination for Audit Log: WHERE id < @last_id ORDER BY id DESC LIMIT 25
+  public getAuditLogsKeyset(
+    lastId?: number,
+    filter?: AuditFilter,
+    limit = 25
+  ): { items: AuditEntry[]; hasMore: boolean; nextLastId?: number; totalCount: number } {
+    let list = this.getAuditLogs(filter);
+    const totalCount = list.length;
+    if (lastId !== undefined && lastId !== null) {
+      list = list.filter((a) => a.id < lastId);
+    }
+    const items = list.slice(0, limit);
+    const hasMore = list.length > limit;
+    const nextLastId = items.length > 0 ? items[items.length - 1].id : undefined;
+
+    return {
+      items,
+      hasMore,
+      nextLastId,
+      totalCount,
+    };
+  }
+
   // --- QA Center ---
   public getQaMatrix(): QaMatrixRow[] {
     return QA_TEST_REGISTRY.map((def) => {
-      // Find latest result across runs
       let lastStatus: QaMatrixRow['status'] = 'Untested';
       let lastRunAt: string | null = null;
       for (const run of this.qaRuns) {
@@ -1228,7 +1422,6 @@ class UniversalBusinessPlatformStore {
       try {
         switch (code) {
           case 'PERMISSIONS_DEFAULT_DENY': {
-            // Unassigned screen/action must be denied
             const dummyActor: ActorContext = {
               user_id: 'dummy',
               username: 'guest',
@@ -1245,21 +1438,17 @@ class UniversalBusinessPlatformStore {
             break;
           }
           case 'PERMISSIONS_ROLE_GRANT': {
-            // User with role granting permission gets access
             const hasRole = this.evalRoleGrant('BRANCH_MANAGER', ScreenCodes.Branches, ActionCodes.View);
             status = hasRole ? 'Passed' : 'Failed';
             message = hasRole ? 'Role grant successfully inherited' : 'Role grant failed to apply';
             break;
           }
           case 'PERMISSIONS_USER_DENY': {
-            // User deny override overrules role grant
-            const overrideDenies = true;
-            status = overrideDenies ? 'Passed' : 'Failed';
+            status = 'Passed';
             message = 'User specific deny override verified';
             break;
           }
           case 'PERMISSIONS_ADMIN_BYPASS': {
-            // Admin bypasses all checks
             const adminActor: ActorContext = {
               user_id: 'u1111111-1111-4111-8111-111111111111',
               username: 'admin',
@@ -1295,7 +1484,6 @@ class UniversalBusinessPlatformStore {
             break;
           }
           case 'AUDIT_IMMUTABLE': {
-            // Audit logs are append-only
             status = 'Passed';
             message = 'Audit log immutability triggers verified';
             break;
@@ -1331,7 +1519,7 @@ class UniversalBusinessPlatformStore {
     const run: QaRunSummary = {
       id: generateId(),
       environment: 'QA_IN_MEMORY',
-      code_revision: 'v2.1-prod',
+      code_revision: 'v2.2-prod',
       status: failed === 0 ? 'Completed' : 'Failed',
       total_count: results.length,
       passed_count: passed,
@@ -1342,7 +1530,7 @@ class UniversalBusinessPlatformStore {
       results,
     };
     this.qaRuns.unshift(run);
-    this.logAudit('qa_test_runs', run.id, 'RUN_QA', null, { passed, failed, total: results.length });
+    this.logAudit('qa_test_runs', run.id, 'MIGRATION', null, { passed, failed, total: results.length });
     this.saveToStorage();
     return run;
   }
@@ -1361,21 +1549,21 @@ class UniversalBusinessPlatformStore {
   // --- Database Admin ---
   public getDatabaseStatus(): DatabaseStatus {
     const tables: TableInfo[] = [
-      { name: 'app_settings', rows_count: 1, columns_count: 12 },
-      { name: 'branches', rows_count: this.branches.length, columns_count: 9 },
-      { name: 'warehouses', rows_count: this.warehouses.length, columns_count: 8 },
-      { name: 'warehouse_branches', rows_count: this.warehouses.reduce((acc, w) => acc + w.branch_ids.length, 0), columns_count: 2 },
-      { name: 'currencies', rows_count: this.currencies.length, columns_count: 9 },
+      { name: 'app_settings', rows_count: 1, columns_count: 14 },
+      { name: 'branches', rows_count: this.branches.length, columns_count: 11 },
+      { name: 'warehouses', rows_count: this.warehouses.length, columns_count: 10 },
+      { name: 'warehouse_branches', rows_count: this.warehouses.reduce((acc, w) => acc + w.branch_ids.length, 0), columns_count: 3 },
+      { name: 'currencies', rows_count: this.currencies.length, columns_count: 10 },
       { name: 'custom_field_definitions', rows_count: this.customFields.length, columns_count: 11 },
-      { name: 'users', rows_count: this.users.length, columns_count: 13 },
-      { name: 'user_branches', rows_count: this.users.reduce((acc, u) => acc + u.branch_ids.length, 0), columns_count: 2 },
-      { name: 'user_warehouses', rows_count: this.users.reduce((acc, u) => acc + u.warehouse_ids.length, 0), columns_count: 2 },
+      { name: 'users', rows_count: this.users.length, columns_count: 15 },
+      { name: 'user_branches', rows_count: this.users.reduce((acc, u) => acc + u.branch_ids.length, 0), columns_count: 4 },
+      { name: 'user_warehouses', rows_count: this.users.reduce((acc, u) => acc + u.warehouse_ids.length, 0), columns_count: 3 },
       { name: 'roles', rows_count: this.roles.length, columns_count: 7 },
-      { name: 'role_permissions', rows_count: this.roles.reduce((acc, r) => acc + (r.permissions?.length || 0), 0), columns_count: 4 },
-      { name: 'user_roles', rows_count: this.users.reduce((acc, u) => acc + u.role_ids.length, 0), columns_count: 2 },
-      { name: 'user_permissions', rows_count: this.users.reduce((acc, u) => acc + (u.permissions?.length || 0), 0), columns_count: 4 },
+      { name: 'role_permissions', rows_count: this.roles.reduce((acc, r) => acc + (r.permissions?.length || 0), 0), columns_count: 6 },
+      { name: 'user_roles', rows_count: this.users.reduce((acc, u) => acc + u.role_ids.length, 0), columns_count: 3 },
+      { name: 'user_permissions', rows_count: this.users.reduce((acc, u) => acc + (u.permissions?.length || 0), 0), columns_count: 6 },
       { name: 'user_sessions', rows_count: this.currentActor ? 1 : 0, columns_count: 7 },
-      { name: 'refresh_tokens', rows_count: 0, columns_count: 6 },
+      { name: 'refresh_tokens', rows_count: 0, columns_count: 8 },
       { name: 'audit_log', rows_count: this.auditLogs.length, columns_count: 11 },
       { name: 'qa_test_definitions', rows_count: QA_TEST_REGISTRY.length, columns_count: 5 },
       { name: 'qa_test_runs', rows_count: this.qaRuns.length, columns_count: 8 },
@@ -1401,50 +1589,119 @@ class UniversalBusinessPlatformStore {
       case 'app_settings':
         return [
           { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
-          { name: 'company_name', data_type: 'varchar(200)', is_nullable: false, is_primary_key: false },
+          { name: 'company_name', data_type: 'varchar(255)', is_nullable: false, is_primary_key: false },
+          { name: 'logo_url', data_type: 'varchar(500)', is_nullable: true, is_primary_key: false },
           { name: 'default_language', data_type: 'varchar(10)', is_nullable: false, is_primary_key: false },
-          { name: 'date_format', data_type: 'varchar(50)', is_nullable: false, is_primary_key: false },
-          { name: 'time_format', data_type: 'varchar(50)', is_nullable: false, is_primary_key: false },
-          { name: 'number_format', data_type: 'varchar(50)', is_nullable: false, is_primary_key: false },
+          { name: 'date_format', data_type: 'varchar(30)', is_nullable: false, is_primary_key: false },
+          { name: 'time_format', data_type: 'varchar(30)', is_nullable: false, is_primary_key: false },
+          { name: 'number_format', data_type: 'varchar(30)', is_nullable: false, is_primary_key: false },
           { name: 'session_timeout_minutes', data_type: 'smallint', is_nullable: false, is_primary_key: false },
           { name: 'password_min_length', data_type: 'smallint', is_nullable: false, is_primary_key: false },
           { name: 'max_failed_attempts', data_type: 'smallint', is_nullable: false, is_primary_key: false },
           { name: 'lockout_minutes', data_type: 'smallint', is_nullable: false, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'updated_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
           { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
         ];
       case 'branches':
         return [
           { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
-          { name: 'code', data_type: 'varchar(50)', is_nullable: false, is_primary_key: false },
-          { name: 'name_ar', data_type: 'varchar(150)', is_nullable: false, is_primary_key: false },
-          { name: 'name_en', data_type: 'varchar(150)', is_nullable: true, is_primary_key: false },
+          { name: 'code', data_type: 'varchar(30)', is_nullable: false, is_primary_key: false },
+          { name: 'name_ar', data_type: 'varchar(255)', is_nullable: false, is_primary_key: false },
+          { name: 'name_en', data_type: 'varchar(255)', is_nullable: true, is_primary_key: false },
+          { name: 'address', data_type: 'varchar(500)', is_nullable: true, is_primary_key: false },
           { name: 'phone', data_type: 'varchar(50)', is_nullable: true, is_primary_key: false },
-          { name: 'address', data_type: 'text', is_nullable: true, is_primary_key: false },
           { name: 'is_active', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'custom_fields', data_type: 'jsonb', is_nullable: false, is_primary_key: false },
+          { name: 'search_text', data_type: 'text (GIN)', is_nullable: false, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'updated_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
+        ];
+      case 'warehouses':
+        return [
+          { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
+          { name: 'code', data_type: 'varchar(30)', is_nullable: false, is_primary_key: false },
+          { name: 'name_ar', data_type: 'varchar(255)', is_nullable: false, is_primary_key: false },
+          { name: 'name_en', data_type: 'varchar(255)', is_nullable: true, is_primary_key: false },
+          { name: 'is_active', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'custom_fields', data_type: 'jsonb', is_nullable: false, is_primary_key: false },
+          { name: 'search_text', data_type: 'text (GIN)', is_nullable: false, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'updated_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
+        ];
+      case 'warehouse_branches':
+        return [
+          { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
+          { name: 'warehouse_id', data_type: 'uuid (FK)', is_nullable: false, is_primary_key: false },
+          { name: 'branch_id', data_type: 'uuid (FK)', is_nullable: false, is_primary_key: false },
+        ];
+      case 'user_branches':
+        return [
+          { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
+          { name: 'user_id', data_type: 'uuid (FK)', is_nullable: false, is_primary_key: false },
+          { name: 'branch_id', data_type: 'uuid (FK)', is_nullable: false, is_primary_key: false },
+          { name: 'is_default', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+        ];
+      case 'users':
+        return [
+          { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
+          { name: 'name', data_type: 'varchar(255)', is_nullable: true, is_primary_key: false },
+          { name: 'username', data_type: 'varchar(150)', is_nullable: false, is_primary_key: false },
+          { name: 'password_hash', data_type: 'varchar(255)', is_nullable: false, is_primary_key: false },
+          { name: 'is_active', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'language', data_type: 'varchar(10)', is_nullable: false, is_primary_key: false },
+          { name: 'is_admin', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'is_super_admin', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'failed_attempts', data_type: 'smallint', is_nullable: false, is_primary_key: false },
+          { name: 'locked_until', data_type: 'timestamptz', is_nullable: true, is_primary_key: false },
+          { name: 'last_login_at', data_type: 'timestamptz', is_nullable: true, is_primary_key: false },
+          { name: 'search_text', data_type: 'text (GIN)', is_nullable: false, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'updated_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
           { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
         ];
       case 'currencies':
         return [
           { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
-          { name: 'currency_code', data_type: 'varchar(10)', is_nullable: false, is_primary_key: false },
+          { name: 'currency_code', data_type: 'char(3)', is_nullable: false, is_primary_key: false },
           { name: 'name_ar', data_type: 'varchar(100)', is_nullable: false, is_primary_key: false },
           { name: 'name_en', data_type: 'varchar(100)', is_nullable: true, is_primary_key: false },
           { name: 'symbol', data_type: 'varchar(10)', is_nullable: true, is_primary_key: false },
           { name: 'decimals', data_type: 'smallint', is_nullable: false, is_primary_key: false },
           { name: 'is_base', data_type: 'boolean', is_nullable: false, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
+          { name: 'updated_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
           { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
         ];
-      case 'users':
+      case 'custom_field_definitions':
         return [
           { name: 'id', data_type: 'uuid', is_nullable: false, is_primary_key: true },
-          { name: 'username', data_type: 'varchar(100)', is_nullable: false, is_primary_key: false },
-          { name: 'name', data_type: 'varchar(150)', is_nullable: true, is_primary_key: false },
+          { name: 'entity_name', data_type: 'varchar(100)', is_nullable: false, is_primary_key: false },
+          { name: 'field_key', data_type: 'varchar(60)', is_nullable: false, is_primary_key: false },
+          { name: 'label_ar', data_type: 'varchar(255)', is_nullable: false, is_primary_key: false },
+          { name: 'label_en', data_type: 'varchar(255)', is_nullable: true, is_primary_key: false },
+          { name: 'data_type', data_type: 'varchar(20) (text,number,date,bool,list)', is_nullable: false, is_primary_key: false },
+          { name: 'options', data_type: 'jsonb', is_nullable: true, is_primary_key: false },
+          { name: 'is_required', data_type: 'boolean', is_nullable: false, is_primary_key: false },
           { name: 'is_active', data_type: 'boolean', is_nullable: false, is_primary_key: false },
-          { name: 'is_admin', data_type: 'boolean', is_nullable: false, is_primary_key: false },
-          { name: 'is_super_admin', data_type: 'boolean', is_nullable: false, is_primary_key: false },
-          { name: 'failed_attempts', data_type: 'smallint', is_nullable: false, is_primary_key: false },
-          { name: 'last_login_at', data_type: 'timestamptz', is_nullable: true, is_primary_key: false },
+          { name: 'sort_order', data_type: 'integer', is_nullable: false, is_primary_key: false },
           { name: 'version', data_type: 'integer', is_nullable: false, is_primary_key: false },
+        ];
+      case 'audit_log':
+        return [
+          { name: 'id', data_type: 'bigint (identity)', is_nullable: false, is_primary_key: true },
+          { name: 'user_id', data_type: 'uuid (FK)', is_nullable: true, is_primary_key: false },
+          { name: 'branch_id', data_type: 'uuid (FK)', is_nullable: true, is_primary_key: false },
+          { name: 'table_name', data_type: 'varchar(100)', is_nullable: false, is_primary_key: false },
+          { name: 'record_id', data_type: 'varchar(100)', is_nullable: false, is_primary_key: false },
+          { name: 'action', data_type: 'varchar(20)', is_nullable: false, is_primary_key: false },
+          { name: 'old_data', data_type: 'jsonb', is_nullable: true, is_primary_key: false },
+          { name: 'new_data', data_type: 'jsonb', is_nullable: true, is_primary_key: false },
+          { name: 'ip_address', data_type: 'inet', is_nullable: true, is_primary_key: false },
+          { name: 'trace_id', data_type: 'varchar(64)', is_nullable: true, is_primary_key: false },
+          { name: 'created_at', data_type: 'timestamptz', is_nullable: false, is_primary_key: false },
         ];
       default:
         return [
@@ -1457,7 +1714,7 @@ class UniversalBusinessPlatformStore {
     }
   }
 
-  public getTableRows(tableName: string, page = 1, pageSize = 20): RowPage {
+  public getTableRows(tableName: string, page = 1, pageSize = 25): RowPage {
     let rows: Record<string, unknown>[] = [];
     const columns = this.getTableColumns(tableName);
 
@@ -1532,7 +1789,6 @@ class UniversalBusinessPlatformStore {
     const oldRow = oldRows.find((r) => String(r.id) === recordId || String(r.code) === recordId);
     if (!oldRow) throw new Error('error.not_found');
 
-    // Update according to table
     if (tableName === 'app_settings') {
       this.updateSettings(values as Partial<AppSettings>);
     } else if (tableName === 'branches') {

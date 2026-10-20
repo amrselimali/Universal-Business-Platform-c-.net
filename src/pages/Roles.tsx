@@ -149,8 +149,6 @@ export const Roles: React.FC = () => {
               <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-600 font-bold text-xs uppercase tracking-wider">
                 <th className="p-4 text-start">{t('common.code')}</th>
                 <th className="p-4 text-start">{t('common.name_ar')}</th>
-                <th className="p-4 text-start">{t('common.name_en')}</th>
-                <th className="p-4 text-center">{t('roles.permissions_count') || 'عدد الصلاحيات الممنوحة'}</th>
                 <th className="p-4 text-center">{t('common.status')}</th>
                 <th className="p-4 text-end">{t('common.actions')}</th>
               </tr>
@@ -162,10 +160,6 @@ export const Roles: React.FC = () => {
                     <span className="ubp-code">{r.code}</span>
                   </td>
                   <td className="p-4 font-bold text-slate-900">{r.name_ar}</td>
-                  <td className="p-4 text-slate-600">{r.name_en || '—'}</td>
-                  <td className="p-4 text-center font-mono font-bold text-teal-700">
-                    {r.permissions?.filter((p) => p.is_allowed).length || 0}
-                  </td>
                   <td className="p-4 text-center">
                     <span
                       className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${

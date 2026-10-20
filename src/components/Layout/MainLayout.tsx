@@ -18,11 +18,11 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ currentRoute, onNavigate
         onNavigate={onNavigate}
       />
 
-      <div className="flex flex-1 pt-16">
-        {/* Desktop Sidebar */}
-        <div className="hidden lg:block w-64 border-e border-slate-200/80 fixed bottom-0 top-16 z-20 bg-white">
+      <div className="flex flex-1">
+        {/* Desktop Sidebar (full height from top to bottom) */}
+        <aside className="hidden lg:flex flex-col w-64 border-e border-slate-200/80 fixed inset-y-0 start-0 z-30 bg-white">
           <NavMenu currentRoute={currentRoute} onNavigate={onNavigate} />
-        </div>
+        </aside>
 
         {/* Mobile Drawer Overlay */}
         {mobileMenuOpen && (
@@ -42,7 +42,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ currentRoute, onNavigate
         )}
 
         {/* Main Content Area */}
-        <main className="flex-1 lg:ms-64 min-w-0">
+        <main className="flex-1 lg:ms-64 min-w-0 pt-16">
           <div className="ubp-page">
             {children}
           </div>

@@ -86,7 +86,7 @@ export const CustomFields: React.FC = () => {
     e.preventDefault();
     setFormError(null);
 
-    const opts = formInput.data_type === 'select'
+    const opts = formInput.data_type === 'list'
       ? rawOptions.split('\n').map((s) => s.trim()).filter(Boolean)
       : [];
 
@@ -346,9 +346,9 @@ export const CustomFields: React.FC = () => {
                   >
                     <option value="text">نص (Text)</option>
                     <option value="number">رقم (Number)</option>
-                    <option value="boolean">نعم/لا (Boolean)</option>
+                    <option value="bool">نعم/لا (Boolean)</option>
                     <option value="date">تاريخ (Date)</option>
-                    <option value="select">قائمة خيارات (Dropdown)</option>
+                    <option value="list">قائمة خيارات (Dropdown)</option>
                   </select>
                 </label>
 
@@ -363,7 +363,7 @@ export const CustomFields: React.FC = () => {
                 </label>
               </div>
 
-              {formInput.data_type === 'select' && (
+              {formInput.data_type === 'list' && (
                 <label className="ubp-field">
                   <span>الخيارات (سطر لكل خيار)</span>
                   <textarea

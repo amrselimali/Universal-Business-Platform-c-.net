@@ -7,10 +7,10 @@
     --ubp-ink: #0F172A;
     --ubp-muted: #64748B;
     --ubp-line: #E2E8F0;
-    --ubp-bg: #F3F6F8;
+    --ubp-bg: #F8FAFC;
     --ubp-surface: #FFFFFF;
     --ubp-radius: 14px;
-    --ubp-shadow: 0 1px 2px rgba(15, 23, 42, .04), 0 10px 30px rgba(15, 23, 42, .05);
+    --ubp-shadow: 0 1px 3px rgba(15, 23, 42, .05), 0 10px 25px rgba(15, 23, 42, .04);
 }
 
 html, body {
@@ -18,13 +18,48 @@ html, body {
     padding: 0;
     background: var(--ubp-bg);
     color: var(--ubp-ink);
-    font-family: "Cairo", "Inter", "Segoe UI", sans-serif;
+    font-family: "Cairo", "Alexandria", "Almarai", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15.5px;
+    line-height: 1.65;
+    letter-spacing: normal;
     min-height: 100%;
+    -webkit-font-smoothing: antialiased;
 }
 
-h1:focus, [tabindex="-1"]:focus { outline: none; }
+html[dir="ltr"] body {
+    font-family: "Inter", "Cairo", "Alexandria", "Segoe UI", sans-serif;
+}
 
-html[dir="ltr"] body { font-family: "Inter", "Cairo", "Segoe UI", sans-serif; }
+table {
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+
+th {
+    padding: 15px 20px !important;
+    font-size: 0.88rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.01em;
+    color: #475569 !important;
+    background-color: #F8FAFC !important;
+    border-bottom: 2px solid var(--ubp-line) !important;
+}
+
+td {
+    padding: 16px 20px !important;
+    font-size: 0.94rem !important;
+    vertical-align: middle;
+    border-bottom: 1px solid #F1F5F9 !important;
+}
+
+tr:hover td {
+    background-color: #F8FAFC;
+}
+
+button, input, select, textarea {
+    font-family: "Cairo", "Alexandria", "Almarai", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
 * { box-sizing: border-box; }
 a { color: inherit; text-decoration: none; }
 

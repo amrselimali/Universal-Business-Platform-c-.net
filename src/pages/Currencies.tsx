@@ -120,12 +120,11 @@ export const Currencies: React.FC = () => {
           <table className="w-full text-start text-sm border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-600 font-bold text-xs uppercase tracking-wider">
-                <th className="p-4 text-start">{t('currency.code') || t('common.code')}</th>
+                <th className="p-4 text-start">{t('common.code')}</th>
                 <th className="p-4 text-start">{t('common.name_ar')}</th>
-                <th className="p-4 text-start">{t('common.name_en')}</th>
-                <th className="p-4 text-start">{t('currency.symbol') || 'الرمز'}</th>
-                <th className="p-4 text-center">{t('currency.decimals') || 'الكسور العشرية'}</th>
-                <th className="p-4 text-center">{t('currency.is_base') || 'العملة الأساسية'}</th>
+                <th className="p-4 text-start">{t('currencies.symbol')}</th>
+                <th className="p-4 text-center">{t('currencies.decimals')}</th>
+                <th className="p-4 text-center">{t('currencies.base')}</th>
                 <th className="p-4 text-end">{t('common.actions')}</th>
               </tr>
             </thead>
@@ -136,7 +135,6 @@ export const Currencies: React.FC = () => {
                     <span className="ubp-code">{c.currency_code}</span>
                   </td>
                   <td className="p-4 font-bold text-slate-900">{c.name_ar}</td>
-                  <td className="p-4 text-slate-600">{c.name_en || '—'}</td>
                   <td className="p-4 font-mono font-bold text-slate-700">{c.symbol || '—'}</td>
                   <td className="p-4 text-center font-mono">{c.decimals}</td>
                   <td className="p-4 text-center">

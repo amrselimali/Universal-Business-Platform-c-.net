@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Universal Business Platform",
+  "description": "منصة أعمال سحابية متكاملة تدير الفروع والمخازن والصلاحيات وقواعد البيانات والمستخدمين مع دعم عربي كامل",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

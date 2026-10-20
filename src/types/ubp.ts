@@ -24,6 +24,7 @@ export interface Branch {
   phone?: string | null;
   is_active: boolean;
   custom_fields: Record<string, unknown>;
+  search_text?: string;
   created_at: string;
   updated_at: string;
   version: number;
@@ -47,6 +48,7 @@ export interface Warehouse {
   is_active: boolean;
   custom_fields: Record<string, unknown>;
   branch_ids: string[];
+  search_text?: string;
   created_at: string;
   updated_at: string;
   version: number;
@@ -89,7 +91,7 @@ export interface CustomFieldDefinition {
   field_key: string;
   label_ar: string;
   label_en?: string | null;
-  data_type: 'text' | 'number' | 'boolean' | 'select' | 'date';
+  data_type: 'text' | 'number' | 'date' | 'bool' | 'list';
   options: string[];
   is_required: boolean;
   is_active: boolean;
@@ -104,7 +106,7 @@ export interface CustomFieldInput {
   field_key: string;
   label_ar: string;
   label_en?: string | null;
-  data_type: 'text' | 'number' | 'boolean' | 'select' | 'date';
+  data_type: 'text' | 'number' | 'date' | 'bool' | 'list';
   options: string[];
   is_required: boolean;
   is_active: boolean;
@@ -150,6 +152,7 @@ export interface User {
   failed_attempts: number;
   locked_until?: string | null;
   last_login_at?: string | null;
+  search_text?: string;
   created_at: string;
   updated_at: string;
   version: number;
@@ -174,6 +177,7 @@ export interface UserListItem {
   branch_count: number;
   warehouse_count: number;
   role_names: string[];
+  search_text?: string;
 }
 
 export interface UserInput {
@@ -190,6 +194,17 @@ export interface UserInput {
   role_ids: string[];
 }
 
+export type AuditAction =
+  | 'INSERT'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'LOGIN'
+  | 'LOGOUT'
+  | 'LOGIN_FAILED'
+  | 'PERMISSION_CHANGE'
+  | 'PASSWORD_RESET'
+  | 'MIGRATION';
+
 export interface AuditEntry {
   id: number;
   user_id?: string | null;
@@ -198,7 +213,7 @@ export interface AuditEntry {
   branch_name?: string | null;
   table_name: string;
   record_id: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'LOGIN' | 'LOGOUT' | 'MIGRATION' | string;
+  action: AuditAction | string;
   old_data?: Record<string, unknown> | null;
   new_data?: Record<string, unknown> | null;
   ip_address?: string | null;

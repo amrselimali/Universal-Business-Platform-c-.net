@@ -35,6 +35,7 @@ import {
   Check,
   Layers,
   Menu,
+  ChevronDown,
 } from 'lucide-react';
 import { useI18n } from '../../i18n';
 
@@ -130,6 +131,9 @@ export const AppIcon: React.FC<AppIconProps> = ({ name, className = '', size = 2
       return <Layers size={size} className={className} />;
     case 'Menu':
       return <Menu size={size} className={className} />;
+    case 'ChevronDown':
+    case 'ArrowDown':
+      return <ChevronDown size={size} className={className} />;
     default:
       return <ExternalLink size={size} className={className} />;
   }
